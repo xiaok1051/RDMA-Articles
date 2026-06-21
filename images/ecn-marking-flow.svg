@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560">
+  <defs>
+    <marker id="arrow-black" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#333"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#d79b00"/>
+    </marker>
+  </defs>
+
+  <rect width="100%" height="100%" fill="white"/>
+
+  <!-- Title -->
+  <text x="480" y="30" text-anchor="middle" font-size="18" font-weight="bold" fill="#333">ECN 标记与 CNP 返回流程</text>
+
+  <!-- ===== Row 1: Entities ===== -->
+  <!-- Sender -->
+  <rect x="60" y="55" width="170" height="50" rx="6" fill="#dae8fc" stroke="#6c8ebf" stroke-width="2"/>
+  <text x="145" y="78" text-anchor="middle" font-size="14" fill="#333" font-weight="bold">发送端</text>
+  <text x="145" y="96" text-anchor="middle" font-size="13" fill="#333">Sender</text>
+
+  <!-- Switch -->
+  <rect x="390" y="55" width="170" height="50" rx="6" fill="#e1d5e7" stroke="#9673a6" stroke-width="2"/>
+  <text x="475" y="78" text-anchor="middle" font-size="14" fill="#333" font-weight="bold">交换机</text>
+  <text x="475" y="96" text-anchor="middle" font-size="13" fill="#333">Switch</text>
+
+  <!-- Receiver -->
+  <rect x="730" y="55" width="170" height="50" rx="6" fill="#dae8fc" stroke="#6c8ebf" stroke-width="2"/>
+  <text x="815" y="78" text-anchor="middle" font-size="14" fill="#333" font-weight="bold">接收端</text>
+  <text x="815" y="96" text-anchor="middle" font-size="13" fill="#333">Receiver</text>
+
+  <!-- ===== Data path (forward) ===== -->
+  <line x1="230" y1="95" x2="380" y2="95" stroke="#333" stroke-width="2" marker-end="url(#arrow-black)"/>
+  <line x1="560" y1="95" x2="720" y2="95" stroke="#333" stroke-width="2" marker-end="url(#arrow-black)"/>
+
+  <!-- Switch internal buffer - now positioned below the switch -->
+  <rect x="420" y="118" width="110" height="24" rx="4" fill="#fff2cc" stroke="#d6b656" stroke-width="1.5"/>
+  <rect x="420" y="118" width="65" height="24" fill="#f0d060" opacity="0.7" rx="4"/>
+  <text x="475" y="134" text-anchor="middle" font-size="9" fill="#666">队列增长</text>
+
+  <!-- ====================================================================== -->
+  <!-- Step 1: Data sent (between Sender and Switch, above data arrow) -->
+  <!-- ====================================================================== -->
+  <rect x="240" y="66" width="145" height="22" rx="4" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1"/>
+  <text x="312" y="81" text-anchor="middle" font-size="11" fill="#333" font-weight="bold">① 发送数据包 (ECT=0/1)</text>
+
+  <!-- ECT label on data -->
+  <text x="310" y="113" text-anchor="middle" font-size="9" fill="#666">ECT=0</text>
+
+  <!-- Leader from Switch to queue -->
+  <line x1="475" y1="105" x2="475" y2="116" stroke="#d6b656" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- ====================================================================== -->
+  <!-- Step 2: ECN marking at Switch -->
+  <!-- ====================================================================== -->
+  <rect x="345" y="160" width="260" height="26" rx="4" fill="#fff2cc" stroke="#d6b656" stroke-width="1"/>
+  <text x="475" y="177" text-anchor="middle" font-size="11" fill="#333" font-weight="bold">② 交换机队列超过 Kmin → ECT→CE</text>
+
+  <!-- Leader from queue to step 2 -->
+  <line x1="475" y1="142" x2="475" y2="153" stroke="#d6b656" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- CE label on data after switch -->
+  <text x="640" y="113" text-anchor="middle" font-size="9" fill="#c00" font-weight="bold">CE 标记</text>
+
+  <!-- ====================================================================== -->
+  <!-- Step 3: Receiver gets CE packet -->
+  <!-- ====================================================================== -->
+  <rect x="590" y="220" width="210" height="26" rx="4" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+  <text x="695" y="237" text-anchor="middle" font-size="11" fill="#2d5a2d" font-weight="bold">③ 接收端收到 CE 标记数据包</text>
+
+  <!-- Arrow from data path to step 3 -->
+  <line x1="640" y1="118" x2="665" y2="213" stroke="#82b366" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- ====================================================================== -->
+  <!-- Step 4: Generate CNP at Receiver -->
+  <!-- ====================================================================== -->
+  <rect x="685" y="300" width="220" height="26" rx="4" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+  <text x="795" y="317" text-anchor="middle" font-size="11" fill="#b8860b" font-weight="bold">④ 生成 CNP (OpCode=0x81)</text>
+
+  <!-- Leader from Receiver to step 4 -->
+  <line x1="815" y1="105" x2="795" y2="293" stroke="#d79b00" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- ====================================================================== -->
+  <!-- CNP return path -->
+  <!-- ====================================================================== -->
+  <!-- Drop from Receiver right side -->
+  <line x1="880" y1="105" x2="880" y2="410" stroke="#d79b00" stroke-width="2" stroke-dasharray="6,3"/>
+  <!-- Horizontal return -->
+  <line x1="880" y1="410" x2="146" y2="410" stroke="#d79b00" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrow-orange)"/>
+  <!-- Up to Sender -->
+  <line x1="145" y1="410" x2="145" y2="105" stroke="#d79b00" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrow-orange)"/>
+
+  <!-- ====================================================================== -->
+  <!-- Step 5: CNP return (on return path) -->
+  <!-- ====================================================================== -->
+  <rect x="360" y="388" width="200" height="22" rx="4" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+  <text x="460" y="403" text-anchor="middle" font-size="11" fill="#b8860b" font-weight="bold">⑤ CNP 返回 (BECN)</text>
+
+  <!-- Leader from step 4 to CNP path -->
+  <line x1="795" y1="326" x2="795" y2="410" stroke="#d79b00" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- ====================================================================== -->
+  <!-- Step 6: DCQCN rate reduction -->
+  <!-- ====================================================================== -->
+  <rect x="20" y="450" width="165" height="26" rx="4" fill="#f8cecc" stroke="#b85450" stroke-width="1"/>
+  <text x="102" y="467" text-anchor="middle" font-size="11" fill="#b85450" font-weight="bold">⑥ DCQCN 收到 CNP 降速</text>
+
+  <!-- Arrow from CNP return to step 6 -->
+  <path d="M 120,410 L 102,443" stroke="#d79b00" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrow-orange)"/>
+
+  <!-- ===== IP header detail callout ===== -->
+  <!-- Bottom annotation -->
+  <rect x="680" y="490" width="260" height="55" rx="4" fill="#f5f5f5" stroke="#ccc" stroke-width="1"/>
+  <text x="690" y="507" font-size="10" fill="#333" font-weight="bold">IP 头 ECN 字段</text>
+  <text x="690" y="522" font-size="9" fill="#666">ECT=0: 00 / ECT=1: 01</text>
+  <text x="690" y="537" font-size="9" fill="#666">CE: 11 (拥塞标记)</text>
+
+</svg>

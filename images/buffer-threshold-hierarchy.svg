@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 600" width="880" height="600">
+  <defs>
+    <marker id="arrow-up" markerWidth="6" markerHeight="8" refX="3" refY="8" orient="auto">
+      <path d="M3,0 L6,8 L0,8 Z" fill="#666"/>
+    </marker>
+  </defs>
+
+  <rect width="100%" height="100%" fill="white"/>
+
+  <!-- Title -->
+  <text x="440" y="30" text-anchor="middle" font-size="18" font-weight="bold" fill="#333">交换机缓冲区阈值分层示意图</text>
+
+  <!-- ===== Left: Occupancy indicator ===== -->
+  <line x1="50" y1="520" x2="50" y2="70" stroke="#999" stroke-width="1.5"/>
+  <line x1="50" y1="70" x2="54" y2="70" stroke="#999" stroke-width="1.5" marker-end="url(#arrow-up)"/>
+  <text x="40" y="310" text-anchor="middle" font-size="11" fill="#666" transform="rotate(-90, 40, 310)">缓冲区占用 ↑</text>
+
+  <!-- Percentage axis -->
+  <text x="70" y="75" text-anchor="end" font-size="9" fill="#999">100%</text>
+  <text x="70" y="165" text-anchor="end" font-size="9" fill="#999">78%</text>
+  <text x="70" y="255" text-anchor="end" font-size="9" fill="#999">59%</text>
+  <text x="70" y="415" text-anchor="end" font-size="9" fill="#999">23%</text>
+  <text x="70" y="525" text-anchor="end" font-size="9" fill="#999">0%</text>
+
+  <!-- ===== Buffer bar (background and zones) ===== -->
+  <!-- Bar outline -->
+  <rect x="80" y="60" width="130" height="460" rx="6" fill="none" stroke="#333" stroke-width="2"/>
+
+  <!-- Zone 4: Normal (bottom) -->
+  <rect x="80" y="412" width="130" height="108" rx="0" fill="#d5e8d4" opacity="0.4"/>
+  <!-- Zone 3: ECN marking -->
+  <rect x="80" y="252" width="130" height="160" rx="0" fill="#fff2cc" opacity="0.5"/>
+  <!-- Zone 2: Above Kmax -->
+  <rect x="80" y="162" width="130" height="90" rx="0" fill="#ffe6cc" opacity="0.5"/>
+  <!-- Zone 1: Headroom (top) -->
+  <rect x="80" y="60" width="130" height="102" rx="0" fill="#f8cecc" opacity="0.4"/>
+  <!-- Re-draw rounded corners overlay -->
+  <rect x="80" y="60" width="130" height="460" rx="6" fill="none" stroke="#333" stroke-width="2"/>
+
+  <!-- ===== Threshold lines (across bar) ===== -->
+  <!-- X-off -->
+  <line x1="80" y1="162" x2="210" y2="162" stroke="#c00" stroke-width="2"/>
+  <circle cx="80" cy="162" r="3" fill="#c00"/>
+  <!-- Kmax -->
+  <line x1="80" y1="252" x2="210" y2="252" stroke="#d79b00" stroke-width="2"/>
+  <circle cx="80" cy="252" r="3" fill="#d79b00"/>
+  <!-- Kmin -->
+  <line x1="80" y1="412" x2="210" y2="412" stroke="#d79b00" stroke-width="2" stroke-dasharray="4,2"/>
+  <circle cx="80" cy="412" r="3" fill="#d79b00"/>
+  <!-- X-on -->
+  <line x1="80" y1="470" x2="210" y2="470" stroke="#82b366" stroke-width="2" stroke-dasharray="4,2"/>
+  <circle cx="80" cy="470" r="3" fill="#82b366"/>
+
+  <!-- ===== Zone labels (inside bar) ===== -->
+  <text x="145" y="125" text-anchor="middle" font-size="10" fill="#c00" font-weight="bold">Headroom</text>
+  <text x="145" y="140" text-anchor="middle" font-size="9" fill="#c00">吸收 PAUSE 在途数据</text>
+
+  <text x="145" y="215" text-anchor="middle" font-size="10" fill="#d79b00" font-weight="bold">ECN Pmax=1.0</text>
+
+  <text x="145" y="335" text-anchor="middle" font-size="10" fill="#d79b00" font-weight="bold">ECN 渐进标记</text>
+  <text x="145" y="350" text-anchor="middle" font-size="9" fill="#d79b00">Kmin → Kmax</text>
+
+  <text x="145" y="465" text-anchor="middle" font-size="10" fill="#2d5a2d" font-weight="bold">正常工作区间</text>
+
+  <!-- ===== Right side: Threshold annotations ===== -->
+  <!-- Buffer limit -->
+  <line x1="210" y1="60" x2="240" y2="60" stroke="#333" stroke-width="1.5"/>
+  <text x="245" y="64" font-size="11" fill="#333" font-weight="bold">Buffer Limit (512 KB)</text>
+
+  <!-- X-off -->
+  <line x1="210" y1="162" x2="250" y2="162" stroke="#c00" stroke-width="1.5"/>
+  <rect x="250" y="151" width="220" height="22" rx="3" fill="#f8cecc" stroke="#c00" stroke-width="1"/>
+  <text x="360" y="166" text-anchor="middle" font-size="10" fill="#c00" font-weight="bold">X-off (400 KB, 78%) → PAUSE 触发</text>
+
+  <!-- Kmax -->
+  <line x1="210" y1="252" x2="250" y2="252" stroke="#d79b00" stroke-width="1.5"/>
+  <rect x="250" y="241" width="200" height="22" rx="3" fill="#ffe6cc" stroke="#d79b00" stroke-width="1"/>
+  <text x="350" y="256" text-anchor="middle" font-size="10" fill="#b8860b" font-weight="bold">Kmax (300 KB, 59%)</text>
+
+  <!-- Kmin -->
+  <line x1="210" y1="412" x2="250" y2="412" stroke="#d79b00" stroke-width="1.5"/>
+  <rect x="250" y="401" width="220" height="22" rx="3" fill="#fff2cc" stroke="#d79b00" stroke-width="1"/>
+  <text x="360" y="416" text-anchor="middle" font-size="10" fill="#b8860b" font-weight="bold">Kmin (120 KB, 23%) → ECN 开始标记</text>
+
+  <!-- X-on -->
+  <line x1="210" y1="470" x2="250" y2="470" stroke="#82b366" stroke-width="1.5"/>
+  <rect x="250" y="459" width="200" height="22" rx="3" fill="#d5e8d4" stroke="#82b366" stroke-width="1"/>
+  <text x="350" y="474" text-anchor="middle" font-size="10" fill="#2d5a2d" font-weight="bold">X-on → PAUSE 解除</text>
+
+  <!-- ===== Bottom: Key relationship ===== -->
+  <rect x="80" y="530" width="720" height="55" rx="4" fill="#f5f5f5" stroke="#ccc" stroke-width="1"/>
+  <text x="90" y="548" font-size="11" fill="#333" font-weight="bold">关键阈值关系</text>
+  <text x="90" y="565" font-size="10" fill="#666">ECN_Kmin &lt; ECN_Kmax &lt; X-off − Headroom</text>
+  <text x="90" y="580" font-size="10" fill="#666">Kmin = Kmax &#215; 0.3~0.5  |  Headroom &#62; 2 &#215; BDP</text>
+
+  <!-- ===== Legend ===== -->
+  <rect x="600" y="60" width="200" height="90" rx="4" fill="#f5f5f5" stroke="#ccc" stroke-width="1"/>
+  <text x="610" y="78" font-size="10" fill="#333" font-weight="bold">图例</text>
+  <rect x="610" y="86" width="30" height="10" fill="#f8cecc" opacity="0.6"/>
+  <text x="645" y="95" font-size="9" fill="#666">PFC Headroom</text>
+  <rect x="610" y="102" width="30" height="10" fill="#ffe6cc" opacity="0.6"/>
+  <text x="645" y="111" font-size="9" fill="#666">ECN 强制标记</text>
+  <rect x="610" y="118" width="30" height="10" fill="#fff2cc" opacity="0.5"/>
+  <text x="645" y="127" font-size="9" fill="#666">ECN 渐进标记</text>
+  <rect x="610" y="134" width="30" height="10" fill="#d5e8d4" opacity="0.4"/>
+  <text x="645" y="143" font-size="9" fill="#666">正常工作</text>
+</svg>

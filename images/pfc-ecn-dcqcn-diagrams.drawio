@@ -1,0 +1,66 @@
+<mxfile>
+  <diagram id="dcqcn-v2" name="DCQCN-StateMachine">
+    <mxGraphModel>
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t1" value="DCQCN 状态机" style="text;html=1;fontSize=20;fontStyle=1;align=center;verticalAlign=middle;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="150" y="10" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ns" value="正常发送
+Rate = Target" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="270" y="80" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cnp" value="收到 CNP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="200" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="to" value="无 CNP 超时" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="330" y="200" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="bc" value="字节超时" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="580" y="200" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="md" value="乘性减 (MD)
+rate = rate × (1-α/2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="310" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="fr" value="快速恢复 (FR)
+rate += β×(limiter-rate)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="310" y="310" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ai" value="加性增 (AI)
+rate += γ × MTU" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="550" y="310" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="收到 CNP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;" edge="1" parent="1" source="ns" target="cnp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="无 CNP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;" edge="1" parent="1" source="ns" target="to">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="字节数超" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;" edge="1" parent="1" source="ns" target="bc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;" edge="1" parent="1" source="cnp" target="md">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;" edge="1" parent="1" source="to" target="fr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;" edge="1" parent="1" source="bc" target="ai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+<diagram id="9fhi8n4x-abov" name="Architecture"><mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /><mxCell id="title" value="PFC / ECN / DCQCN 三件套架构图" style="text;html=1;fontSize=20;fontStyle=1;align=center;verticalAlign=middle;whiteSpace=wrap;" vertex="1" parent="1"><mxGeometry x="200" y="10" width="400" height="40" as="geometry" /></mxCell><mxCell id="sender" value="发送端 (Sender)
+NIC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;" vertex="1" parent="1"><mxGeometry x="30" y="80" width="110" height="80" as="geometry" /></mxCell><mxCell id="sender-qp" value="RC QP
+Rate: 100Gbps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1"><mxGeometry x="45" y="110" width="80" height="40" as="geometry" /></mxCell><mxCell id="dcqcn-ann" value="④ DCQCN
+收到 CNP → 降速" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;dashed=1;" vertex="1" parent="1"><mxGeometry x="40" y="175" width="90" height="40" as="geometry" /></mxCell><mxCell id="sw1" value="交换机 1
+(Leaf)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;" vertex="1" parent="1"><mxGeometry x="220" y="80" width="100" height="80" as="geometry" /></mxCell><mxCell id="sw1-buf" value="缓冲队列
+[    ]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666;fontSize=10;" vertex="1" parent="1"><mxGeometry x="230" y="100" width="80" height="30" as="geometry" /></mxCell><mxCell id="sw2" value="交换机 2
+(Spine)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;" vertex="1" parent="1"><mxGeometry x="410" y="80" width="100" height="80" as="geometry" /></mxCell><mxCell id="sw2-buf" value="缓冲队列
+[|||||||    ]
+↑ 超过 Kmin" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1"><mxGeometry x="420" y="100" width="80" height="40" as="geometry" /></mxCell><mxCell id="rvc" value="接收端 (Receiver)
+NIC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;" vertex="1" parent="1"><mxGeometry x="590" y="80" width="110" height="80" as="geometry" /></mxCell><mxCell id="cnp-ann" value="③ 生成 CNP
+OpCode=0x81" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;dashed=1;" vertex="1" parent="1"><mxGeometry x="600" y="175" width="90" height="40" as="geometry" /></mxCell></root></mxGraphModel></diagram><diagram id="fak18sl8-ow1w" name="PFC-Pause"><mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel></diagram><diagram id="mimom8y9-d0t0" name="ECN-Marking"><mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel></diagram><diagram id="xsg2iveh-j5du" name="Buffer-Threshold"><mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel></diagram></mxfile>

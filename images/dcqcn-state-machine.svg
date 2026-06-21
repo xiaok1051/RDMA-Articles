@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#666"/>
+    </marker>
+  </defs>
+
+  <rect width="100%" height="100%" fill="white"/>
+
+  <!-- Title -->
+  <text x="480" y="30" text-anchor="middle" font-size="18" font-weight="bold" fill="#333">DCQCN 状态机</text>
+
+  <!-- ====================================================================== -->
+  <!-- Central State -->
+  <!-- ====================================================================== -->
+  <rect x="330" y="60" width="300" height="55" rx="8" fill="#dae8fc" stroke="#6c8ebf" stroke-width="2"/>
+  <text x="480" y="85" text-anchor="middle" font-size="14" fill="#333" font-weight="bold">正常发送状态</text>
+  <text x="480" y="104" text-anchor="middle" font-size="12" fill="#666">Rate = Target Rate</text>
+
+  <!-- Labels on arrows from central state -->
+  <text x="265" y="140" text-anchor="middle" font-size="10" fill="#b8860b" font-weight="bold">收到 CNP</text>
+  <text x="480" y="140" text-anchor="middle" font-size="10" fill="#b8860b" font-weight="bold">无 CNP 超时 (RTT)</text>
+  <text x="735" y="140" text-anchor="middle" font-size="10" fill="#b8860b" font-weight="bold">每 N 字节</text>
+
+  <!-- Arrows from central state to events -->
+  <!-- Left: CNP -->
+  <path d="M 350,115 L 180,168" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+  <!-- Center: Timeout -->
+  <line x1="480" y1="115" x2="480" y2="168" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- Right: Byte counter -->
+  <path d="M 610,115 L 780,168" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+  <!-- ====================================================================== -->
+  <!-- Event Row -->
+  <!-- ====================================================================== -->
+  <!-- Event 1: CNP received -->
+  <rect x="100" y="170" width="160" height="40" rx="6" fill="#ffe6cc" stroke="#d79b00" stroke-width="1.5"/>
+  <text x="180" y="195" text-anchor="middle" font-size="12" fill="#b8860b" font-weight="bold">收到 CNP</text>
+
+  <!-- Event 2: Timeout -->
+  <rect x="390" y="170" width="180" height="40" rx="6" fill="#ffe6cc" stroke="#d79b00" stroke-width="1.5"/>
+  <text x="480" y="195" text-anchor="middle" font-size="12" fill="#b8860b" font-weight="bold">无 CNP 超时</text>
+
+  <!-- Event 3: Byte counter -->
+  <rect x="700" y="170" width="160" height="40" rx="6" fill="#ffe6cc" stroke="#d79b00" stroke-width="1.5"/>
+  <text x="780" y="195" text-anchor="middle" font-size="12" fill="#b8860b" font-weight="bold">字节计数器超时</text>
+
+  <!-- Arrows from events to actions -->
+  <line x1="180" y1="210" x2="180" y2="258" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="480" y1="210" x2="480" y2="258" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="780" y1="210" x2="780" y2="258" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ====================================================================== -->
+  <!-- Action Row -->
+  <!-- ====================================================================== -->
+  <!-- Action 1: MD -->
+  <rect x="50" y="260" width="260" height="78" rx="6" fill="#f8cecc" stroke="#b85450" stroke-width="1.5"/>
+  <text x="180" y="282" text-anchor="middle" font-size="12" fill="#b85450" font-weight="bold">乘性减 (MD)</text>
+  <text x="180" y="302" text-anchor="middle" font-size="11" fill="#666">α = (1-g)×α + g×Fb</text>
+  <text x="180" y="320" text-anchor="middle" font-size="11" fill="#666">Rate = Rate × (1 − α/2)</text>
+  <text x="180" y="335" text-anchor="middle" font-size="9" fill="#999">更新 α → Rate 乘性减小</text>
+
+  <!-- Action 2: FR -->
+  <rect x="340" y="260" width="280" height="78" rx="6" fill="#fff2cc" stroke="#d6b656" stroke-width="1.5"/>
+  <text x="480" y="282" text-anchor="middle" font-size="12" fill="#333" font-weight="bold">快速恢复 (FR)</text>
+  <text x="480" y="302" text-anchor="middle" font-size="11" fill="#666">Rate += β × (Rate_lim − Rate)</text>
+  <text x="480" y="320" text-anchor="middle" font-size="11" fill="#666">β 通常为 50%</text>
+  <text x="480" y="335" text-anchor="middle" font-size="9" fill="#999">逐步恢复到降速前的速率</text>
+
+  <!-- Action 3: AI -->
+  <rect x="650" y="260" width="260" height="78" rx="6" fill="#d5e8d4" stroke="#82b366" stroke-width="1.5"/>
+  <text x="780" y="282" text-anchor="middle" font-size="12" fill="#2d5a2d" font-weight="bold">加性增 (AI)</text>
+  <text x="780" y="302" text-anchor="middle" font-size="11" fill="#666">Rate += γ × MTU_per_RTT</text>
+  <text x="780" y="320" text-anchor="middle" font-size="11" fill="#666">γ 为增长步长</text>
+  <text x="780" y="335" text-anchor="middle" font-size="9" fill="#999">缓慢探测可用带宽</text>
+
+  <!-- ====================================================================== -->
+  <!-- Feedback loop arrows (return to central state) -->
+  <!-- ====================================================================== -->
+  <!-- MD back to Normal -->
+  <path d="M 180,338 C 180,420 340,420 340,115" stroke="#666" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow)" fill="none"/>
+  <text x="250" y="408" text-anchor="middle" font-size="9" fill="#999">降速完成 → 恢复正常</text>
+
+  <!-- FR back to Normal -->
+  <path d="M 480,338 C 480,420 540,420 540,115" stroke="#666" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow)" fill="none"/>
+  <text x="540" y="408" text-anchor="middle" font-size="9" fill="#999">恢复完成 → 恢复正常</text>
+
+  <!-- AI back to Normal -->
+  <path d="M 780,338 C 780,420 620,420 620,115" stroke="#666" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow)" fill="none"/>
+  <text x="700" y="408" text-anchor="middle" font-size="9" fill="#999">增速完成 → 恢复正常</text>
+
+  <!-- Parameters legend -->
+  <rect x="30" y="430" width="380" height="75" rx="4" fill="#f5f5f5" stroke="#ccc" stroke-width="1"/>
+  <text x="40" y="448" font-size="11" fill="#333" font-weight="bold">DCQCN 参数说明</text>
+  <text x="40" y="465" font-size="10" fill="#666">α：拥塞因子 (0~1)，反映收到 CNP 的比例</text>
+  <text x="40" y="480" font-size="10" fill="#666">g：滤波器增益，控制 α 更新平滑度 (推荐 1/256 ~ 1/16)</text>
+  <text x="40" y="495" font-size="10" fill="#666">β：快速恢复因子 (推荐 50%)</text>
+
+  <rect x="540" y="430" width="390" height="75" rx="4" fill="#f5f5f5" stroke="#ccc" stroke-width="1"/>
+  <text x="550" y="448" font-size="11" fill="#333" font-weight="bold">参数推荐值</text>
+  <text x="550" y="465" font-size="10" fill="#666">g = 1/256 (高精度) / 1/64 (中等) / 1/16 (快速响应)</text>
+  <text x="550" y="480" font-size="10" fill="#666">β = 0.5 (标准配置)</text>
+  <text x="550" y="495" font-size="10" fill="#666">γ = 1 (每 MTU 增加 1 个 MTU 的速率)</text>
+</svg>
