@@ -10,7 +10,7 @@
 
 `ibv_alloc_pd` 用于分配一个 **Protection Domain（PD，保护域）**。PD 是 RDMA 中最重要的资源隔离单元，它关联了 MR（内存区域）、QP（队列对）、AH（地址句柄）等资源。同一个 PD 内的资源可以互相访问，不同 PD 之间隔离。
 
-![ibv_alloc_pd 调用流程图](../images/ibv_alloc_pd-flow.png)
+![ibv_alloc_pd 调用流程图](../../images/ibv_alloc_pd-flow.png)
 
 整个调用路径涉及 **5 层** 软件栈：
 

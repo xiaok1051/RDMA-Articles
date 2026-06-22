@@ -49,7 +49,7 @@ PFC、ECN、DCQCN 分别解决不同层面的问题，它们之间是**协作而
 | **ECN** | 网络层（L3） | 端到端（end-to-end） | CNP 报文 | 毫秒级 | 通知发送端网络拥塞状态 |
 | **DCQCN** | 传输层（L4） | 端到端（end-to-end） | 基于 ECN 反馈 | 毫秒级 | 动态调整发送速率 |
 
-![PFC/ECN/DCQCN 三件套架构图](images/pfc-ecn-dcqcn-architecture.png)
+![PFC/ECN/DCQCN 三件套架构图](../images/pfc-ecn-dcqcn-architecture.png)
 
 形象的类比：
 
@@ -138,7 +138,7 @@ PFC PAUSE 帧是基于 MAC Control 帧的（EtherType = 0x8808），格式如下
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-![PFC PAUSE 帧交互时序](images/pfc-pause-sequence.png)
+![PFC PAUSE 帧交互时序](../images/pfc-pause-sequence.png)
 
 关键字段：
 - **Priority Enable Vector (PEV)**：2 字节的位图，每一位对应一个优先级，置 1 表示该优先级的时间向量有效
@@ -445,7 +445,7 @@ CNP 的生成路径（接收端侧大致处理流程）：
 └─────────────────────────────────────────────┘
 ```
 
-![ECN 标记与 CNP 返回流程](images/ecn-marking-flow.png)
+![ECN 标记与 CNP 返回流程](../images/ecn-marking-flow.png)
 
 ### 3.2 ECN 标记算法
 
@@ -667,7 +667,7 @@ DCTCP (Data Center TCP)
 
 ### 4.2 DCQCN 状态机
 
-![DCQCN 状态机](images/dcqcn-state-machine.png)
+![DCQCN 状态机](../images/dcqcn-state-machine.png)
 
 DCQCN 的状态机由三种事件驱动：**收到 CNP**、**无 CNP 超时**、**字节计数器超时**。
 
@@ -1059,7 +1059,7 @@ P = (qlen - Kmin) / (Kmax - Kmin) × max_probability
 
 ### 5.3 调优策略
 
-![缓冲区阈值分层示意图](images/buffer-threshold-hierarchy.png)
+![缓冲区阈值分层示意图](../images/buffer-threshold-hierarchy.png)
 
 #### 缓冲区分层设计
 
@@ -1264,8 +1264,8 @@ Swift 的思路：
 
 ### A3. 配图清单
 
-- `images/pfc-ecn-dcqcn-architecture.svg` — PFC/ECN/DCQCN 三件套架构图
-- `images/pfc-pause-sequence.svg` — PFC PAUSE 帧交互时序图
-- `images/ecn-marking-flow.svg` — ECN 标记 + CNP 返回流程图
-- `images/dcqcn-state-machine.svg` — DCQCN 状态机转换图
-- `images/buffer-threshold-hierarchy.svg` — 缓冲区阈值分层示意图（ECN/PFC 关系）
+- `../images/pfc-ecn-dcqcn-architecture.svg` — PFC/ECN/DCQCN 三件套架构图
+- `../images/pfc-pause-sequence.svg` — PFC PAUSE 帧交互时序图
+- `../images/ecn-marking-flow.svg` — ECN 标记 + CNP 返回流程图
+- `../images/dcqcn-state-machine.svg` — DCQCN 状态机转换图
+- `../images/buffer-threshold-hierarchy.svg` — 缓冲区阈值分层示意图（ECN/PFC 关系）

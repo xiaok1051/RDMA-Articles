@@ -8,7 +8,7 @@
 
 RDMA 编程的核心是通过 libibverbs 库在用户态直接操作硬件。所有编程对象之间存在严格的依赖关系——理解这张关系图是掌握 RDMA 编程的第一步。
 
-![RDMA 编程对象关系](images/rdma-object-relationship.png)
+![RDMA 编程对象关系](../images/rdma-object-relationship.png)
 
 关系图的核心逻辑：
 
@@ -359,7 +359,7 @@ swr.wr.rdma.rkey = remote_info.rkey;
 
 QP 创建后处于 **RESET** 状态，需要经过三次 `ibv_modify_qp()` 才能开始收发数据。
 
-![QP 状态机](images/rdma-qp-state-machine.png)
+![QP 状态机](../images/rdma-qp-state-machine.png)
 
 **RESET → INIT**
 
