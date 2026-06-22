@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>RDMA Read/Write 深度解析：零拷贝远程内存访问实战</title>
+</head>
+<body style="margin:0; padding:20px; background:#f5f5f5;">
+<div style="max-width:680px; margin:0 auto; background:#ffffff; padding:30px 20px; font-family:-apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; color:#2b2b2b; font-size:16px; line-height:1.75;">
+
+<div style="margin:-30px -20px 30px -20px;">
+  <img src="rdma-hello-rw-cover.png" alt="封面图" style="width:100%; display:block; border-radius:0;">
+</div>
+
+<p style="color:#888888; font-size:14px; line-height:1.6; letter-spacing:1px; padding:15px 0; border-top:1px solid #eee; margin:0 0 25px 0;">
+  `rdma_hello_rw` 是一个基于 **libibverbs** 的 RDMA Read/Write Hello World 程序。它使用 **RC（Reliable Connection）** 模式的 QP，通过 **RDMA Write** 和 **RDMA Read** 直接在两端内存之间传输数据，无需对端 CPU 参与数据面操作。
+</p>
+
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  概述
+</h2>
+<p style="margin:0 0 12px 0;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">rdma_hello_rw</code> 是一个基于 <strong>libibverbs</strong> 的 RDMA Read/Write Hello World 程序。它使用 <strong>RC（Reliable Connection）</strong> 模式的 QP，通过 <strong>RDMA Write</strong> 和 <strong>RDMA Read</strong> 直接在两端内存之间传输数据，无需对端 CPU 参与数据面操作。</p>
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  与 Send/Recv 版的核心区别
+</h2>
+<table style="width:100%; border-collapse:collapse; font-size:14px; margin:15px 0;">
+  <thead>
+    <tr style="background:#2563eb; color:#fff;">
+      <th style="padding:8px 12px; border:1px solid #ddd; text-align:left;">特性</th>
+      <th style="padding:8px 12px; border:1px solid #ddd; text-align:left;">Send/Recv 版</th>
+      <th style="padding:8px 12px; border:1px solid #ddd; text-align:left;">Read/Write 版</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background:#fafafa;">
+      <td style="padding:8px 12px; border:1px solid #ddd;">数据面操作</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">IBV_WR_SEND</code> + <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">ibv_post_recv</code></td>
+      <td style="padding:8px 12px; border:1px solid #ddd;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">IBV_WR_RDMA_WRITE</code> + <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">IBV_WR_RDMA_READ</code></td>
+    </tr>
+    <tr>
+      <td style="padding:8px 12px; border:1px solid #ddd;">对端 CPU 参与</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">需要 — 对端必须提前 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">post_recv</code> 准备接收</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;"><strong>不需要</strong> — 直接读写对端内存，对端无感知</td>
+    </tr>
+    <tr style="background:#fafafa;">
+      <td style="padding:8px 12px; border:1px solid #ddd;">RQ 消耗</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">消耗 RQ（Receive Queue）</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">不消耗 RQ（操作走 SQ）</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 12px; border:1px solid #ddd;">完成事件</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">双方 CQ 都有完成事件</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;"><strong>仅发起端</strong> CQ 有完成事件</td>
+    </tr>
+    <tr style="background:#fafafa;">
+      <td style="padding:8px 12px; border:1px solid #ddd;">MR 权限</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">REMOTE_WRITE</code></td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">Server 额外需要 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">REMOTE_READ</code></td>
+    </tr>
+    <tr>
+      <td style="padding:8px 12px; border:1px solid #ddd;">同步机制</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">CQ 完成事件即表示对方已收到</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">需要额外 TCP 信号同步（因为对端不知道数据已到达）</td>
+    </tr>
+  </tbody>
+</table>
+<div style="background:#f0f7ff; border-left:4px solid #2563eb; padding:10px 14px; margin:10px 0 15px 0; font-size:14px; color:#555;">
+<strong>关键区别</strong>：Send/Recv 类似 TCP 的 send/recv——两端都要参与。RDMA Read/Write 类似 DMA——直接读写对方内存，对方进程完全无感知。
+</div>
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  数据结构
+</h2>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">qp_info（通过 TCP 交换的连接信息）</h3>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">struct qp_info {</span>
+<span style="display:block; padding-left:2.4em;">uint16_t      lid;       /* RoCE 下填 0（InfiniBand 才用 LID） */</span>
+<span style="display:block; padding-left:2.4em;">uint32_t      qpn;       /* QP Number — 对端目标 QP */</span>
+<span style="display:block; padding-left:2.4em;">uint32_t      psn;       /* Packet Sequence Number — 起始包序号 */</span>
+<span style="display:block; padding-left:2.4em;">union ibv_gid gid;       /* Global ID — RoCEv2 使用 index 1 */</span>
+<span style="display:block; padding-left:2.4em;">uint64_t      buf_addr;  /* MR 起始虚拟地址 — 对端 RDMA 访问的地址 */</span>
+<span style="display:block; padding-left:2.4em;">uint32_t      rkey;      /* Remote Key — 对端访问本端 MR 的权限密钥 */</span>
+<span style="display:block;">};</span>
+</pre>
+<p style="margin:0 0 12px 0;">相比 Send/Recv 版新增了 <strong><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">buf_addr</code></strong> 和 <strong><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">rkey</code></strong> 两个字段，用于告知对端本端内存的位置和访问密钥。</p>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">rdma_res（本地 RDMA 资源）</h3>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">struct rdma_res {</span>
+<span style="display:block; padding-left:2.4em;">struct ibv_context *ctx;  /* IB 设备上下文 */</span>
+<span style="display:block; padding-left:2.4em;">struct ibv_pd      *pd;   /* 保护域 */</span>
+<span style="display:block; padding-left:2.4em;">struct ibv_cq      *cq;   /* 完成队列 */</span>
+<span style="display:block; padding-left:2.4em;">struct ibv_qp      *qp;   /* 队列对 */</span>
+<span style="display:block; padding-left:2.4em;">struct ibv_mr      *mr;   /* 内存区域 */</span>
+<span style="display:block; padding-left:2.4em;">char                buf[MSG_SIZE];  /* DMA 缓冲区（唯一的数据缓冲区） */</span>
+<span style="display:block;">};</span>
+</pre>
+<p style="margin:0 0 12px 0;"><strong>注意</strong>：Server 和 Client 共用同一个 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">rdma_res</code> 结构体，但 MR 注册时的权限不同。</p>
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  控制面（TCP）
+</h2>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">连接建立</h3>
+<p style="margin:0 0 12px 0;">TCP 用于带外交互连接信息，流程与 Send/Recv 版一致：</p>
+<ol style="padding-left:20px; margin:10px 0; font-size:15px; line-height:1.8;">
+  <li style="margin-bottom:4px;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">tcp_listen()</code> — Server 绑定端口，开始 listen</li>
+  <li style="margin-bottom:4px;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">tcp_accept()</code> — 接受 Client 连接</li>
+  <li style="margin-bottom:4px;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">tcp_connect()</code> — Client 连接到 Server</li>
+  <li style="margin-bottom:4px;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">tcp_exchange()</code> — 交换 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">qp_info</code>（QPN + PSN + GID + buf_addr + rkey）</li>
+</ol>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">同步信号</h3>
+<p style="margin:0 0 12px 0;">RDMA Read/Write 完成后，对端无法从 CQ 感知，因此使用 <strong>TCP 信号</strong> 进行带外同步：</p>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">static int tcp_signal(int fd, char c);  /* 发信号 */</span>
+<span style="display:block;">static int tcp_wait(int fd, char expected);  /* 等信号 */</span>
+</pre>
+<table style="width:100%; border-collapse:collapse; font-size:14px; margin:15px 0;">
+  <thead>
+    <tr style="background:#2563eb; color:#fff;">
+      <th style="padding:8px 12px; border:1px solid #ddd; text-align:left;">信号</th>
+      <th style="padding:8px 12px; border:1px solid #ddd; text-align:left;">方向</th>
+      <th style="padding:8px 12px; border:1px solid #ddd; text-align:left;">含义</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background:#fafafa;">
+      <td style="padding:8px 12px; border:1px solid #ddd;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">'W'</code></td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">Client → Server</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">RDMA Write 已完成，Server 可以检查内存</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 12px; border:1px solid #ddd;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">'R'</code></td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">Server → Client</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">回复已写入，Client 可以 RDMA Read</td>
+    </tr>
+    <tr style="background:#fafafa;">
+      <td style="padding:8px 12px; border:1px solid #ddd;"><code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">'D'</code></td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">Client → Server</td>
+      <td style="padding:8px 12px; border:1px solid #ddd;">Client 读完，准备断开</td>
+    </tr>
+  </tbody>
+</table>
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  数据面（RDMA Read/Write）
+</h2>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">RDMA Write：写对端内存</h3>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">static int post_write(struct rdma_res *r, uint64_t remote_addr, uint32_t rkey)</span>
+</pre>
+<ul style="padding-left:20px; margin:10px 0; font-size:15px; line-height:2;">
+  <li style="margin-bottom:4px;"><strong>将本端 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">buf</code> 的内容直接写入对端内存</strong>（由 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">remote_addr</code> + <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">rkey</code> 指定）</li>
+  <li style="margin-bottom:4px;">对端 CPU 不会被中断，数据"静默"地出现在对端内存中</li>
+  <li style="margin-bottom:4px;">使用 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">IBV_WR_RDMA_WRITE</code> opcode</li>
+  <li style="margin-bottom:4px;">对端无需任何准备（无需 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">post_recv</code>）</li>
+</ul>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">wr.opcode = IBV_WR_RDMA_WRITE;</span>
+<span style="display:block;">wr.wr.rdma.remote_addr = remote_addr;  /* 对端 MR 地址 */</span>
+<span style="display:block;">wr.wr.rdma.rkey        = rkey;         /* 对端 MR 的 rkey */</span>
+</pre>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">RDMA Read：读对端内存</h3>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">static int post_read(struct rdma_res *r, uint64_t remote_addr, uint32_t rkey)</span>
+</pre>
+<ul style="padding-left:20px; margin:10px 0; font-size:15px; line-height:2;">
+  <li style="margin-bottom:4px;"><strong>从对端内存读数据到本端 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">buf</code></strong>（由 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">remote_addr</code> + <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">rkey</code> 指定）</li>
+  <li style="margin-bottom:4px;">对端 CPU 无感知</li>
+  <li style="margin-bottom:4px;">本端 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">buf</code> 必须已注册 MR（有 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">lkey</code>）</li>
+</ul>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">wr.opcode = IBV_WR_RDMA_READ;</span>
+<span style="display:block;">wr.wr.rdma.remote_addr = remote_addr;</span>
+<span style="display:block;">wr.wr.rdma.rkey        = rkey;</span>
+</pre>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">CQ 轮询</h3>
+<p style="margin:0 0 12px 0;">与 Send/Recv 版相同的 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">wait_cq()</code> 函数，轮询 CQ 等待操作完成：</p>
+<ul style="padding-left:20px; margin:10px 0; font-size:15px; line-height:2;">
+  <li style="margin-bottom:4px;">每 2ms 轮询一次，最多 2 秒</li>
+  <li style="margin-bottom:4px;">RDMA Write 完成 = NIC 已确认写操作完成</li>
+  <li style="margin-bottom:4px;">RDMA Read 完成 = 数据已到达本端缓冲区</li>
+</ul>
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  QP 状态机
+</h2>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">INIT（RESET → INIT）</h3>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">.qp_access_flags = IBV_ACCESS_LOCAL_WRITE</span>
+<span style="display:block; padding-left:10.2em;">| IBV_ACCESS_REMOTE_WRITE</span>
+<span style="display:block; padding-left:10.2em;">| IBV_ACCESS_REMOTE_READ,</span>
+</pre>
+<p style="margin:0 0 12px 0;">相比 Send/Recv 版多了 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">IBV_ACCESS_REMOTE_READ</code>，因为 Client 需要通过 RDMA Read 读取 Server 的内存。</p>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">RTR（Ready to Receive）</h3>
+<p style="margin:0 0 12px 0;">配置对端的 QPN、PSN 和 GID，与 Send/Recv 版完全一致。</p>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">RTS（Ready to Send）</h3>
+<p style="margin:0 0 12px 0;">配置重传参数和本端发端 PSN，与 Send/Recv 版完全一致。</p>
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  MR 注册权限
+</h2>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">// Server（res_alloc(1)）</span>
+<span style="display:block;">int mr_flags = IBV_ACCESS_LOCAL_WRITE</span>
+<span style="display:block; padding-left:7.8em;">| IBV_ACCESS_REMOTE_WRITE   /* Client 可以写我 */</span>
+<span style="display:block; padding-left:7.8em;">| IBV_ACCESS_REMOTE_READ;   /* Client 可以读我 */</span>
+<span style="display:block;"></span>
+<span style="display:block;">// Client（res_alloc(0)）</span>
+<span style="display:block;">int mr_flags = IBV_ACCESS_LOCAL_WRITE;   /* 不需要暴露给对端 */</span>
+</pre>
+<p style="margin:0 0 12px 0;"><strong>注意</strong>：Client 的 MR 只有 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">LOCAL_WRITE</code>，因为 Client 只作为 RDMA Read 的<strong>发起端</strong>（数据读取到本端 buf 需要本地写权限）。Server 的内存需要暴露给 Client，所以需要 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">REMOTE_WRITE</code>（Client 写过来）和 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">REMOTE_READ</code>（Client 读过去）。</p>
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  完整执行流程
+</h2>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;">Server (linux01)                      Client (linux02)</span>
+<span style="display:block; padding-left:2.4em;">|                                      |</span>
+<span style="display:block; padding-left:2.4em;">|  1. 打开 RDMA 设备                    |  1. 打开 RDMA 设备</span>
+<span style="display:block; padding-left:2.4em;">|  2. 注册 MR (REMOTE_WRITE+READ)       |  2. 注册 MR (仅 LOCAL_WRITE)</span>
+<span style="display:block; padding-left:2.4em;">|  3. 创建 QP                          |  3. 创建 QP</span>
+<span style="display:block; padding-left:2.4em;">|  4. TCP listen                       |  4. TCP connect 192.168.64.4</span>
+<span style="display:block; padding-left:2.4em;">|&lt;========== TCP exchange qp_info ======&gt;|</span>
+<span style="display:block; padding-left:2.4em;">|     (传 buf_addr + rkey)              |     (获取对端 buf_addr + rkey)</span>
+<span style="display:block; padding-left:2.4em;">|  5. QP: INIT → RTR → RTS              |  5. QP: INIT → RTR → RTS</span>
+<span style="display:block; padding-left:2.4em;">|                                      |</span>
+<span style="display:block; padding-left:2.4em;">|                                      |  6. 写 &quot;Hello from client!&quot; 到本端 buf</span>
+<span style="display:block; padding-left:2.4em;">|                                      |  7. RDMA Write → Server 的 buf</span>
+<span style="display:block; padding-left:2.4em;">|                                      |  8. wait_cq() ← WRITE 完成</span>
+<span style="display:block; padding-left:2.4em;">|                                      |  9. TCP signal &#x27;W&#x27;</span>
+<span style="display:block; padding-left:2.4em;">|  6. tcp_wait(&#x27;W&#x27;)                    |</span>
+<span style="display:block; padding-left:2.4em;">|  7. 打印 buf: &quot;Hello from client!&quot;    |</span>
+<span style="display:block; padding-left:2.4em;">|  8. 写 &quot;Hello from server!&quot; 到 buf    |</span>
+<span style="display:block; padding-left:2.4em;">|  9. TCP signal &#x27;R&#x27;                   |</span>
+<span style="display:block; padding-left:2.4em;">|                                      | 10. tcp_wait(&#x27;R&#x27;)</span>
+<span style="display:block; padding-left:2.4em;">|                                      | 11. RDMA Read ← Server 的 buf</span>
+<span style="display:block; padding-left:2.4em;">|                                      | 12. wait_cq() ← READ 完成</span>
+<span style="display:block; padding-left:2.4em;">|                                      | 13. 打印 buf: &quot;Hello from server!&quot;</span>
+<span style="display:block; padding-left:2.4em;">|                                      | 14. TCP signal &#x27;D&#x27;</span>
+<span style="display:block; padding-left:2.4em;">| 10. tcp_wait(&#x27;D&#x27;)                    |</span>
+</pre>
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  运行示例
+</h2>
+<pre style="background:#1e293b; border-radius:6px; padding:14px 16px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:13px; line-height:1.6; overflow-x:auto; margin:8px 0 15px 0; color:#e2e8f0;">
+<span style="display:block;"># Server（linux01）</span>
+<span style="display:block;">wangkun@linux01:~$ sudo ./rdma_hello_rw -s</span>
+<span style="display:block;">server: opening RDMA device...</span>
+<span style="display:block; padding-left:1.2em;">device: rxe0</span>
+<span style="display:block;">server: buf_addr=0xaaaadb5c7868 rkey=0x11e1</span>
+<span style="display:block;">server: waiting for TCP connection on port 18515...</span>
+<span style="display:block; padding-left:1.2em;">tcp: client from 192.168.64.5:44692</span>
+<span style="display:block;">server: exchanging QP/MR info...</span>
+<span style="display:block; padding-left:1.2em;">local QPN: 33, peer QPN: 17</span>
+<span style="display:block;">server: QP connected</span>
+<span style="display:block;">server: waiting for RDMA write...</span>
+<span style="display:block;">server: received via RDMA write: Hello from client!</span>
+<span style="display:block;">server: done</span>
+<span style="display:block;"></span>
+<span style="display:block;"># Client（linux02）</span>
+<span style="display:block;">wangkun@linux02:~$ sudo ./rdma_hello_rw -c 192.168.64.4</span>
+<span style="display:block;">client: opening RDMA device...</span>
+<span style="display:block; padding-left:1.2em;">device: rxe_0</span>
+<span style="display:block;">client: buf_addr=0xaaaae1dc6868 rkey=0x0</span>
+<span style="display:block;">client: connecting to 192.168.64.4:18515...</span>
+<span style="display:block;">client: exchanging QP/MR info...</span>
+<span style="display:block; padding-left:1.2em;">local QPN: 17, peer QPN: 33</span>
+<span style="display:block; padding-left:1.2em;">peer buf_addr=0xaaaadb5c7868 rkey=0x11e1</span>
+<span style="display:block;">client: QP connected</span>
+<span style="display:block;">client: RDMA writing to server...</span>
+<span style="display:block;">client: RDMA write completed</span>
+<span style="display:block;">client: waiting for RDMA read signal...</span>
+<span style="display:block;">client: RDMA reading from server...</span>
+<span style="display:block;">client: RDMA read completed</span>
+<span style="display:block;">client: received via RDMA read: Hello from server!</span>
+</pre>
+<h2 style="font-size:20px; font-weight:bold; color:#1a1a1a; margin:35px 0 15px 0; padding-left:14px; border-left:4px solid #2563eb;">
+  设计要点
+</h2>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">1. 为什么 TCP 信号是必需的？</h3>
+<p style="margin:0 0 12px 0;">RDMA Write 完成后，<strong>只有发起端（Client）知道操作已完成</strong>。Server 不知道数据何时到达自己的内存。如果 Server 在数据到达前读取 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">buf</code>，读到的是旧数据。因此需要 TCP 信号作为带外同步机制。</p>
+<p style="margin:0 0 12px 0;">Send/Recv 不需要这个同步：<code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">post_send</code> 完成后，对端的 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">wait_cq</code>（<code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">post_recv</code> 的完成事件）自然就知道数据到了。</p>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">2. 为什么 Client 的 rkey = 0x0？</h3>
+<p style="margin:0 0 12px 0;">Client 的 MR 只注册了 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">IBV_ACCESS_LOCAL_WRITE</code>，没有暴露给对端，所以 rkey 无意义。Client 作为 RDMA Read/Write 的<strong>发起端</strong>，只需要知道 Server 的 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">buf_addr</code> 和 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">rkey</code> 即可。Server 不需要访问 Client 的内存。</p>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">3. QP Access Flags 的一致性</h3>
+<p style="margin:0 0 12px 0;">QP 在 INIT 阶段的 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">qp_access_flags</code> 和 MR 注册时的权限需要匹配：</p>
+<ul style="padding-left:20px; margin:10px 0; font-size:15px; line-height:2;">
+  <li style="margin-bottom:4px;"><strong>QP INIT flags</strong>：声明本 QP 允许对端通过此 QP 做什么操作</li>
+  <li style="margin-bottom:4px;"><strong>MR flags</strong>：声明本 MR 允许什么访问</li>
+</ul>
+<p style="margin:0 0 12px 0;">如果 QP 允许 <code style="background:#f0f0f0; padding:2px 6px; border-radius:3px; font-size:14px;">REMOTE_WRITE</code> 但 MR 不允许，实际操作为会失败（由 NIC 硬件校验）。</p>
+<h3 style="font-size:17px; font-weight:bold; color:#2563eb; margin:20px 0 10px 0;">4. 零拷贝特性</h3>
+<p style="margin:0 0 12px 0;">RDMA Read/Write 的真正价值在于：</p>
+<ul style="padding-left:20px; margin:10px 0; font-size:15px; line-height:2;">
+  <li style="margin-bottom:4px;"><strong>无需对端 CPU 参与</strong>：对端可以忙于计算，数据悄悄到达或被取走</li>
+  <li style="margin-bottom:4px;"><strong>无需 RQ 资源</strong>：不消耗接收队列，适合大量数据传输</li>
+  <li style="margin-bottom:4px;"><strong>不过对端内核</strong>：数据直接 DMA 到用户态内存，不经过对端内核协议栈</li>
+</ul>
+
+<!-- Footer -->
+<div style="margin-top:40px; padding-top:20px; border-top:1px solid #eee; text-align:center !important; font-size:13px; color:#888888; font-family:-apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;">
+  <center>
+    <p style="margin:0 0 4px 0; padding:0; font-size:13px; color:#888888; font-family:-apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; text-align:center !important;">原创文章 · 作者：fengyp</p>
+    <p style="margin:0; padding:0; font-size:13px; color:#888888; font-family:-apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; text-align:center !important;">欢迎转发，转载请联系作者</p>
+  </center>
+</div>
+
+</div>
+</body>
+</html>
