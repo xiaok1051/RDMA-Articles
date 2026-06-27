@@ -10,7 +10,7 @@
 
 `ibv_create_qp` 用于创建 **队列对（Queue Pair, QP）**。QP 是 RDMA 通信的基本端点，包含 **SQ（发送队列）** 和 **RQ（接收队列）** 两个工作队列。用户态通过 `ibv_post_send` / `ibv_post_recv` 提交工作请求（WR），硬件异步执行并通过 CQ 返回完成事件。
 
-![ibv_create_qp 调用流程图](../../images/ibv_create_qp-flow.png)
+![ibv_create_qp 调用流程图](../images/ibv_create_qp-flow.png)
 
 整个调用路径涉及 **5 层** 软件栈：
 

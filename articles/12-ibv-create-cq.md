@@ -10,7 +10,7 @@
 
 `ibv_create_cq` 用于创建 **完成队列（Completion Queue, CQ）**。CQ 是 RDMA 中异步事件通知机制的核心——当 SQ/WQ 上的 WR（工作请求）完成时，硬件会在 CQ 中写入 CQE（完成队列元素），用户态通过 `ibv_poll_cq` 轮询获取完成状态。
 
-![ibv_create_cq 调用流程图](../../images/ibv_create_cq-flow.png)
+![ibv_create_cq 调用流程图](../images/ibv_create_cq-flow.png)
 
 整个调用路径涉及 **5 层** 软件栈：
 

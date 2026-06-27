@@ -10,7 +10,7 @@
 
 `ibv_reg_mr` 用于将一段 **用户态虚拟地址空间** 注册到 RDMA 硬件，使其能够直接访问（DMA 读写）。注册成功后返回 `struct ibv_mr`，其中包含硬件识别的 **lkey/rkey（STAG）**——这是 RDMA 操作中内存保护的关键令牌。
 
-![ibv_reg_mr 调用流程图](../../images/ibv_reg_mr-flow.png)
+![ibv_reg_mr 调用流程图](../images/ibv_reg_mr-flow.png)
 
 整个调用路径涉及 **5 层** 软件栈：
 

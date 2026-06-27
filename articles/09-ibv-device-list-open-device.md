@@ -15,7 +15,7 @@
 
 这两步完成后，应用程序才能调用 `ibv_alloc_pd()`、`ibv_reg_mr()`、`ibv_create_cq()`、`ibv_create_qp()` 等 verbs 操作。
 
-![设备发现与打开流程图](../../images/ibv_get_device_list-ibv_open_device-flow.png)
+![设备发现与打开流程图](../images/ibv_get_device_list-ibv_open_device-flow.png)
 
 ---
 
