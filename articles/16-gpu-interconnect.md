@@ -218,3 +218,234 @@ DGX H100 内部有两张完全独立的互联平面：
 - 任意 GPU pair 一跳直达，带宽 450 GB/s 单向
 
 两个平面各司其职：PCIe 管 GPU↔CPU 和 GPU↔NIC（跨机通信），NVLink 管 GPU↔GPU（机内通信）。这两种互联互不依赖——NVSwitch 不挂在 PCIe Switch 下面，GPU 的 NVLink port 和 PCIe port 是两套独立的物理接口。
+
+## 5. NVSwitch：从点对点到全互联
+
+NVLink 解决了 GPU 直连问题，但带来了一个新问题：全互联的连线复杂度。
+
+### 5.1 问题：N 个 GPU 全互联需要多少对 NVLink？
+
+8 块 GPU 两两直连：C(8,2) = 28 对。每块 H100 只有 18 个 NVLink port——不够。
+
+即使够，物理连线也是噩梦：28 对高速差分线，需要穿越整个机箱，对信号完整性是巨大考验。NVSwitch 就是为这个问题设计的：**所有 GPU 连到 Switch，Switch 内部做交换**。
+
+```
+没有 NVSwitch（直连）:          有 NVSwitch（星型）:
+GPU0 — GPU1                      GPU0 ─┐
+GPU0 — GPU2                      GPU1 ─┤
+GPU0 — GPU3                      GPU2 ─┼─ NVSwitch ─ GPUs
+...                              GPU3 ─┤
+(28 对线，每个 GPU 连 7 对)        (4 颗 Switch，每个 GPU 连所有 Switch)
+```
+
+### 5.2 NVSwitch 内部架构
+
+![NVSwitch 内部架构](../images/16-nvswitch-arch.png)
+
+NVSwitch 3.0 内部有三个关键组件：
+
+**1. 64 个 NVLink Port（8 输入 + 8 输出）**
+
+每个 port 支持 50 GB/s，总共 64 × 50 = 3.2 TB/s 全双工交换容量。在 DGX H100 中，每颗 NVSwitch 连接所有 8 个 GPU，每个 GPU 贡献 2-3 条 NVLink（具体分配：GPU 连所有 4 颗 Switch，18 ÷ 4 ≈ 4-5 条/GPU/Switch）。
+
+**2. Crossbar 交换矩阵（Non-Blocking）**
+
+内部采用 Crossbar（交叉开关矩阵），任意 Input Port 到任意 Output Port 无阻塞——不需要 buffer 排队等待其他传输结束。这在交换架构中是最理想的情况：**所有 8 个 GPU 同时发数据，全部通过，互不阻塞。**
+
+结果是：任意 GPU pair 之间一跳直达，反向带宽 450 GB/s（单向），延迟仅 ~3 μs——只比 NVLink 直连多了 Switch 的内部转发延迟（~1 μs）。
+
+**3. Multicast & Reduction Engine（CollNet 硬件基础）**
+
+NVSwitch 不只是转发——它能对数据做**硬件归约（Hardware Reduction）**：
+
+```
+传统 AllReduce（Ring）:
+  GPU0 → GPU1 → GPU2 → ... → GPU7 → GPU0
+  每一跳都有延迟累积，N 个 GPU 需要 N-1 步
+
+NVSwitch 硬件归约（CollNet）:
+  GPU0-7 → NVSwitch → Switch 内部硬件 SUM → 广播结果 → GPU0-7
+  一步完成！延迟远低于 Ring
+```
+
+这与 InfiniBand Switch 的 SHARP（Scalable Hierarchical Aggregation and Reduction Protocol）是同一思路——将归约计算下沉到网络硬件中，避免 data 来回搬运。
+
+**Virtual Channel（VC）机制**：NVSwitch 内部支持多个 Virtual Channel，防止 Head-of-Line blocking。如果 Port A → Port B 的传输被阻塞（比如目标 buffer 满了），Port A → Port C 的传输可以从另一个 VC 绕过去——不排队。
+
+### 5.3 DGX 系列的 NVSwitch 演进
+
+| 系统 | NVSwitch 数量 | NVLink 版本 | per-GPU 带宽 | 拓扑特点 |
+|------|-------------|------------|-------------|---------|
+| DGX A100 | 6 × NVSwitch 3.0 | NVLink 3.0 | 600 GB/s | 8 GPU 全互联 |
+| DGX H100 | 4 × NVSwitch 3.0 | NVLink 4.0 | 900 GB/s | 8 GPU 全互联 |
+| DGX B200 | NVSwitch 4.0 | NVLink 5.0 | 1.8 TB/s | 更大交换容量 |
+
+NVSwitch 从 DGX A100 的 6 颗缩减到 DGX H100 的 4 颗，因为每颗 NVSwitch 3.0 的 port 数从之前的版本翻倍（从 ~36 port 到 64 port），可以用更少的芯片完成全互联。
+
+### 5.4 NVSwitch 的容错
+
+NVLink 链路故障时，NVSwitch 可以重路由——绕过故障链路，用剩余健康链路继续工作。链路训练（link training）是 NVSwitch 和 GPU 之间 per-link 独立进行的，单条 link failure 不会让整个 port 掉线。
+
+## 6. CUDA：软件如何驾驭硬件
+
+硬件再好，也需要软件来用。CUDA 提供了一套完整的 API，让程序员无需关心底层走的是 PCIe 还是 NVLink。
+
+### 6.1 P2P Access API
+
+这是最常用的一组 API——启用 GPU 之间的直接通信：
+
+```cpp
+// Step 1: 查询 P2P 是否可用
+int canAccessPeer;
+cudaDeviceCanAccessPeer(&canAccessPeer, dev0, dev1);
+
+// Step 2: 启用 P2P 访问
+cudaSetDevice(dev0);
+cudaDeviceEnablePeerAccess(dev1, 0);
+
+// Step 3: 直接 P2P 拷贝——CUDA 自动选择路径
+cudaMemcpyPeer(dst_gpu0, 0,  // dest on GPU 0
+               src_gpu1, 1,  // source on GPU 1
+               size);
+
+// Step 4: 也可以让 kernel 直接访问远程 GPU 的显存
+// (需要 Unified Memory 支持，见下文)
+```
+
+`cudaDeviceCanAccessPeer()` 返回 true 的条件是：
+- 两块 GPU 在同一 PCIe Switch 下（P2P 可用）**或**有 NVLink 连接
+- ACS 已关闭（PCIe P2P 路径）
+- IOMMU 配置允许
+
+CUDA 运行时在调用 `cudaMemcpyPeer()` 时自动查询拓扑，按以下优先级选择路径：
+1. NVLink 直连或通过 NVSwitch（最快）
+2. PCIe P2P（同一 Switch 下）
+3. CPU 内存中转（staging buffer，最慢的回退路径）
+
+### 6.2 Unified Memory（统一内存）
+
+Unified Memory 提供跨 GPU 的统一地址空间。对程序员来说，只用一个指针，数据在哪里由系统自动管理：
+
+```cpp
+// 分配统一内存地址（所有 GPU 都能用这个指针访问）
+float *data;
+cudaMallocManaged(&data, N * sizeof(float));
+
+// GPU 0 写数据
+cudaSetDevice(0);
+kernel<<<...>>>(data);
+
+// GPU 1 读数据——触发 page fault，自动迁移
+cudaSetDevice(1);
+cudaDeviceSynchronize();
+kernel<<<...>>>(data);  // data 通过 NVLink/PCIe 自动搬到 GPU 1
+```
+
+**Page Fault 处理流程**（以 GPU 1 访问 GPU 0 的数据为例）：
+
+```
+1. GPU 1 SM 发 load 指令访问不在本地 HBM 的地址
+2. GPU 1 MMU → TLB miss → page table walk → page not present
+3. GPU 硬件触发 page fault 中断 → GPU 驱动捕获
+4. 驱动通知 UVM (Unified Virtual Memory) daemon（用户态进程）
+5. UVM daemon 决策：
+   - 数据从 GPU 0 搬过来（migration）
+   - 或同时映射到 GPU 0 和 GPU 1（duplicate for read-only）
+   - 或直接在 GPU 0 上远程访问（map remote, 走 NVLink）
+6. 更新两个 GPU 的 page table，唤醒 faulting 线程
+```
+
+NVLink 的存在让 page fault 延迟从 PCIe 的 ~10 μs 降到 ~2 μs，显著改善了 Unified Memory 的性能。
+
+**预取优化**：
+
+```cpp
+// 提前把数据搬到目标 GPU，批量迁移，避免运行时 page fault
+cudaMemPrefetchAsync(data, N * sizeof(float), targetDevice, stream);
+```
+
+`cudaMemPrefetchAsync()` 利用 NVLink 高带宽做批量迁移，是训练代码中的常用优化——在 kernel launch 前预取下一批数据。
+
+### 6.3 Stream 并发与计算通信 Overlap
+
+CUDA Stream 是实现计算和通信重叠的关键机制：
+
+```cpp
+cudaStream_t computeStream, commStream;
+cudaStreamCreate(&computeStream);
+cudaStreamCreate(&commStream);
+
+// 通信 stream：做 P2P / NCCL 传输
+cudaMemcpyPeerAsync(dst, dstDev, src, srcDev, size, commStream);
+
+// 计算 stream：同时跑 kernel——NVLink 是 full-duplex，不阻塞
+kernel<<<grid, block, 0, computeStream>>>(...);
+
+// 等待两个 stream 都完成
+cudaStreamSynchronize(computeStream);
+cudaStreamSynchronize(commStream);
+```
+
+NVLink 的 full-duplex 特性在这里至关重要：computeStream 的数据（本 GPU HBM → SM）和 commStream 的数据（HBM → NVLink → peer GPU）走不同的物理路径，互不争抢。
+
+**但需要注意**：如果 kernel 的显存访问过于密集（memory-bound kernel），它本身就在跟通信 stream 争抢 HBM 带宽。HBM 的 3.35 TB/s 是计算和通信共享的——不是额外的。
+
+### 6.4 MIG（Multi-Instance GPU）
+
+H100 支持 MIG——将一块物理 GPU 切成最多 7 个独立的 GPU 实例：
+
+```
+H100 (132 SM, 80GB HBM) → MIG 模式：
+  GI-0: 20 SM, 10GB
+  GI-1: 20 SM, 10GB
+  ...
+  GI-6: 12 SM, 10GB
+```
+
+每个 MIG 实例有自己的显存、SM 配额、L2 cache 分区——相互之间完全隔离。但 NVLink 和 NVSwitch 在 MIG 下如何划分？
+
+- **NVLink port 分配**：每个 MIG 实例分配独立的 NVLink port 子集
+- **NVSwitch 连接**：MIG 实例的 NVLink 流量仍然走 NVSwitch，与其他实例流量在 Switch 内部做 QoS 隔离
+- **限制**：MIG 实例之间的 P2P 需要走回 PCIe（因为 NVLink port 是独占分配的），跨 MIG 实例通信的带宽比完整 GPU 之间差很多
+
+### 6.5 GPUDirect RDMA（CUDA 侧）
+
+从 CUDA 编程的角度看 GPUDirect RDMA，核心 API 是获取 GPU 显存的物理地址：
+
+```cpp
+// 获取 GPU 指针的物理属性和 PCIe bus address
+CUdeviceptr gpu_ptr;
+CUmemGenericAllocationProperties prop = {};
+prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+cuMemCreate(&handle, size, &prop, 0);
+cuMemGetAddressRange(&ptr, &size_out, handle);
+
+// nvidia-p2p.ko 导出物理地址给 RDMA 驱动
+// RDMA 驱动用 cuMemGetHandleForAddressRange() 获取可导出的 handle
+// 然后通过 nvidia_p2p_get_pages() 拿到 PCIe DMA address
+```
+
+这个 API 路径让 RDMA 网卡可以直接向 GPU 显存做 RDMA Write/Read——数据从远端 GPU 出发，经过网络，直接写入本地 GPU 显存——**全程零 CPU 内存拷贝**。
+
+### 6.6 底层查询：cudaDeviceCanAccessPeer() 的实现
+
+这个 API 最终调用 NVML（NVIDIA Management Library）查询两层拓扑：
+
+1. **NVLink 拓扑**：通过 NVML 查询 GPU 之间的 NVLink 连接矩阵
+2. **PCIe 拓扑**：通过 NVML 查询 PCIe 层级（GPU → PCIe Switch → RC → CPU）
+
+```bash
+# NVML 暴露的拓扑信息
+$ nvidia-smi nvlink -s  # NVLink 状态（link 数量、速率、错误计数）
+$ nvidia-smi topo -m    # 矩阵（PIX/PHB/NODE/SYS）
+```
+
+`cudaDeviceCanAccessPeer()` 合并两层拓扑信息，返回综合判断：有 NVLink → true，同一 PCIe Switch → true（如果 ACS 关闭），否则 false。
+
+### 6.7 CUDA 11 vs 12 的 P2P 行为差异
+
+CUDA 12 对 P2P 做了一些重要改进：
+
+- **默认行为更激进**：CUDA 12 默认为所有支持 P2P 的 GPU pair 启用 peer access，而 CUDA 11 需要手动调用 `cudaDeviceEnablePeerAccess()`
+- **Unified Memory 改进**：UVM daemon 的迁移策略更智能，更好地利用 NVLink 的高带宽做 prefetch
+- **MIG 支持增强**：CUDA 12 中 MIG 实例的 P2P 路径选择更可靠，能正确识别哪些实例共享 NVLink port
