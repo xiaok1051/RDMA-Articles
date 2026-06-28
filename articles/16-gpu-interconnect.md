@@ -449,3 +449,72 @@ CUDA 12 对 P2P 做了一些重要改进：
 - **默认行为更激进**：CUDA 12 默认为所有支持 P2P 的 GPU pair 启用 peer access，而 CUDA 11 需要手动调用 `cudaDeviceEnablePeerAccess()`
 - **Unified Memory 改进**：UVM daemon 的迁移策略更智能，更好地利用 NVLink 的高带宽做 prefetch
 - **MIG 支持增强**：CUDA 12 中 MIG 实例的 P2P 路径选择更可靠，能正确识别哪些实例共享 NVLink port
+
+## 7. 数据路径全景
+
+到目前为止，我们已经覆盖了 GPU 互联的全部硬件组件（PCIe、NVLink、NVSwitch）和软件层（CUDA P2P、Unified Memory、GPUDirect RDMA）。最后一步，把所有路径放在一起做定量对比。
+
+![数据路径对比](../images/16-data-path-comparison.png)
+
+### 7.1 五条路径对比
+
+| 路径 | 物理链路 | 带宽（单向） | 典型延迟 | CUDA API | 场景 |
+|------|---------|------------|---------|----------|------|
+| PCIe P2P | PCIe Switch | 64 GB/s | ~10 μs | `cudaMemcpyPeer` | 多 GPU，无 NVLink |
+| NVLink P2P | NVLink 直连 | 450 GB/s | ~2 μs | `cudaMemcpyPeer` | 同机 GPU-GPU |
+| NVSwitch | NVLink + Switch | 450 GB/s | ~3 μs | `cudaMemcpyPeer` | 同机多 GPU 全互联 |
+| GPUDirect RDMA | GPU→PCIe→NIC→Net | 100 GB/s (NDR) | ~5-10 μs | NCCL / RDMA API | 跨机 GPU-GPU |
+| CPU 中转 | GPU→CPU→GPU | ~32 GB/s | ~50 μs | `cudaMemcpy` × 2 | 兼容回退 |
+
+### 7.2 路径选择策略
+
+路径选择是**自动的**——程序员不需要（也不应该）手动指定走哪条路径。CUDA runtime 和 NCCL 内部都有一套拓扑感知的路由逻辑：
+
+```
+CUDA runtime 路径选择（cudaMemcpyPeer 内部）:
+  if (NVLink 直连或通过 NVSwitch):
+      → 走 NVLink/NVSwitch，延迟 ~2-3 μs
+  elif (同一 PCIe Switch 下，ACS 关闭):
+      → 走 PCIe P2P，延迟 ~10 μs
+  else:
+      → 走 CPU 内存中转（staging buffer），延迟 ~50 μs
+```
+
+NCCL 在此基础上还处理跨机场景——如果检测到 IB/RoCE 网卡可做 GPUDirect RDMA，就直接让 NIC DMA 读写 GPU 显存。
+
+### 7.3 实际训练中的路径组合
+
+一个典型的 8×H100 单机训练（如 DGX H100）：
+
+```
+GPU 0-3 ↔ GPU 0-3:  NVSwitch（450 GB/s，一跳直达）
+GPU 4-7 ↔ GPU 4-7:  NVSwitch（450 GB/s，一跳直达）
+GPU 0-3 ↔ GPU 4-7:  NVSwitch（仍然一跳直达——4 颗 NVSwitch 全互联！）
+```
+
+注意：虽然 GPU 0-3 和 GPU 4-7 分属两个 PCIe domain（PCIe Switch 0/1），但它们在 NVLink plane 上是通的——4 颗 NVSwitch 连接了所有 8 个 GPU。这是两套独立平面的关键优势：**PCIe 的拓扑划分不影响 NVLink 的全互联。**
+
+跨机训练（如 64×H100 = 8 节点）：
+
+```
+机内: NVSwitch（450 GB/s, ~3 μs）
+跨机: GPUDirect RDMA over NDR IB（100 GB/s, ~5-10 μs）
+```
+
+机内通信速度是跨机通信的 4.5 倍。这就是为什么大模型训练策略（如 FSDP、Tensor Parallel、Pipeline Parallel）要精心规划每层的并行度——**通信量最大的并行方式放在机内**（如 Tensor Parallel 的 AllReduce 放机内 NVLink），**通信量适中的放跨机**（如 Data Parallel 的 gradient sync 放跨机 RDMA）。
+
+### 7.4 关键约束速查
+
+| 约束 | 说明 |
+|------|------|
+| NVLink port 数量 | H100: 18 per GPU，受 die edge 物理面积限制 |
+| ACS 阻断 P2P | BIOS 中关闭 ACS + IOMMU 放行才能用 PCIe P2P |
+| GPUDirect RDMA | 需要 nvidia-p2p.ko + ATS 支持 + IOMMU 配置正确 |
+| MIG 降低 NVLink 带宽 | MIG 实例分走 NVLink port，跨 MIG 实例的 P2P 走 PCIe |
+| HBM 带宽是共享的 | 计算密集 kernel 和通信 stream 共享 HBM 3.35 TB/s |
+| NVSwitch 非阻塞 | 64 port Crossbar，任意 port pair 同时通信 |
+
+---
+
+本文从 GPU 内部的存储层级开始，逐层拆解了 PCIe、NVLink、NVSwitch 三种互联的硬件原理，以及 CUDA 如何使用 P2P API、Unified Memory、Stream 等软件抽象驾驭这些硬件。理解这套体系后，再看 NCCL 的 Ring/Tree 算法选择、FSDP 的分片策略、Megatron 的 TP/PP/DP 并行设计，就会发现它们的核心约束都来自本文讨论的这些硬件数字。
+
