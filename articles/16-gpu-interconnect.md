@@ -25,34 +25,40 @@ PCIe 带宽的演进速度也追不上算力：
 
 NVIDIA 不是没看到这个瓶颈。他们的对策就是 **NVLink** 和 **NVSwitch**——一套完全独立于 PCIe 的私有互联体系。这篇文章从 GPU 内部的存储层级出发，逐层讲清楚 PCIe、NVLink、NVSwitch 的硬件原理，以及 CUDA 如何用 P2P、Unified Memory、Stream 等 API 驾驭这些硬件。
 
-## 2. GPU 内部架构：数据搬运为什么是瓶颈
+## 2. GPU 内部架构：为什么数据跨芯片这么贵
 
-先看 GPU 内部的数据是怎么流动的。
+想象一块 H100 GPU。芯片上跑了 132 个 SM，每个 SM 里有 128 个 FP32 Core 和 4 个 Tensor Core——总共一万七千个计算单元，都在拼命算。它们算的数据从哪来？
+
+答案是**看数据住哪，距离越远越慢**：
 
 ![GPU 内部架构](../images/16-gpu-internal-arch.png)
 
-H100 基于 GH100 GPU，包含 132 个 SM（Streaming Multiprocessor），每个 SM 内含 128 个 FP32 CUDA Core 和 4 个第四代 Tensor Core。这些计算单元需要源源不断的数据供给，而数据来自一个层级化的存储体系：
+```
+数据位置           带宽              相当于
+──────────────────────────────────────────────────
+Register          ~100 TB/s         就在手边（SM 内部）
+L1/Shared Mem     ~33 TB/s          同一个房间
+L2 Cache          ~12 TB/s          同一层楼
+HBM3              3.35 TB/s         隔壁楼
+NVLink 4.0        900 GB/s          隔壁街区
+PCIe 5.0          64 GB/s           隔壁城市
+```
 
-| 存储层级 | 容量（per GPU） | 带宽（per GPU） | 延迟 |
-|---------|---------------|---------------|------|
-| Register File | 256KB / SM | ~100 TB/s (aggregate) | ~0 cycles |
-| L1 / Shared Memory | 256KB / SM | ~33 TB/s (aggregate) | ~30 cycles |
-| L2 Cache | 50 MB | ~12 TB/s | ~200 cycles |
-| HBM3 | 80 GB | **3.35 TB/s** | ~300-500 cycles |
-| NVLink 4.0 | — | **900 GB/s** (双向) | ~1-3 μs |
-| PCIe 5.0 x16 | — | **64 GB/s** | ~10 μs |
+从 Register 到 HBM，都在 GPU 芯片这一块板子上，速度已经降了 30 倍。出了芯片，走 NVLink 又降了 3.7 倍。走 PCIe 再降 14 倍——**从最快的 Register 到最慢的 PCIe，带宽差了 1500 倍。**
 
-关键数字：**HBM 带宽是 PCIe 的 52 倍**（3.35 TB/s vs 64 GB/s）。这意味着 GPU 访问本地显存的速度，比通过 PCIe 访问另一块 GPU 的显存快 50 倍以上。就算走 NVLink，差距也是 3.7 倍。
+这张图本质上画的就是 H100 的物理布局：
 
-这就是互联带宽成为瓶颈的根本原因：**计算单元离数据越远，带宽断崖式下跌。**
+- **132 个 SM** 挤在 die 中央，每个 SM 自带 256KB 的 Register File 和 256KB 的可配置 L1/Shared Memory
+- **50MB L2 Cache** 围在 SM 外围，所有 SM 通过片上 Crossbar 网络共享
+- **5 个 HBM3 Stack** 紧贴 die 的上下两条边——每个 Stack 是 8-12 层 DRAM die 垂直堆叠，通过 TSV（穿硅通孔）和硅中介层连到 GPU die。每个 Stack 有 1024-bit 宽的内存接口，5 个绑在一起才凑出 3.35 TB/s
+- **18 个 NVLink PHY** 沿 die 左右两条边排列，每个 50 GB/s，凑出 900 GB/s 双向
+- **PCIe Controller** 占 die 底部一小段，x16 通道，64 GB/s
 
-HBM3 的物理结构值得一提——它不是普通的 DRAM 芯片，而是 8-12 层 DRAM die 垂直堆叠，通过 TSV（Through-Silicon Via）穿孔连接，再通过硅中介层（Silicon Interposer）与 GPU die 互联。5 个 HBM3 Stack 沿 GPU die 的上下边缘排列，每个 Stack 提供 1024-bit 的内存接口。NVLink PHY 同样沿 die 边缘排列——18 个 port，每个 50 GB/s，共 900 GB/s 双向。
+注意一个物理事实：**die 的四条边是有限的**。HBM PHY 占了两条边的大部分，NVLink PHY 占了另外两条边，PCIe Controller 再占一段。这三者是竞争关系——想加 NVLink port？就得挤 HBM 的边。想做更多 HBM Stack？NVLink port 就得少。这是一个零和博弈。
 
-所以 GPU die 的边缘同时排列着 HBM PHY 和 NVLink PHY，两者共享 die perimeter。die 内部则是 132 个 SM 和 50MB L2 Cache。SM 通过 Crossbar 网络访问 L2，L2 再路由到 HBM 或 NVLink/PCIe。
+这就是为什么 H100 只有 18 个 NVLink port 而不是 36 个——不是 NVIDIA 不想加，是 die edge 没地了。
 
-这个物理约束决定了一件重要的事：**NVLink port 数量受 die 边缘面积限制。** H100 有 18 个 NVLink port，这不是随便选的——die 的四条边要同时容纳 HBM PHY（占两条边的大部分）、NVLink PHY（占两条边的剩余部分）和 PCIe Controller（占一小段）。NVLink port 越多，留给 HBM 的 die edge 就越少，这是一个零和博弈。
-
-理解了 GPU 内部的数据瓶颈，接下来我们看数据出了 GPU die 之后，经过哪些路径到达其他 GPU 或网络。
+理解了数据在芯片内部面临的带宽陡降，下一节我们看数据离开 GPU die 之后，走哪条路到其他 GPU 或网络。
 
 ## 3. PCIe：从 GPU 视角看
 
