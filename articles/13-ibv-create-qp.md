@@ -290,7 +290,7 @@ err:
 - **`erdma_alloc_qp_buf_and_db()`**：一次性分配 SQ WQE 队列、RQ RQE 队列、Doorbell 记录三块内存
   - SQ WQE 和 RQ RQE 在同一个 `qbuf` 中（SQ 在前，RQ 在后，由内核确定 RQ 偏移）
   - Doorbell 记录通过 `erdma_alloc_dbrecords()` 分配
-- **QP 队列缓冲布局**：`[SQ WQE 区域 | RQ RQE 区域]`，`resp.rq_offset` 指定 RQ 起始位置
+- **QP 队列缓冲布局**：`[SQ WQE 区域 + RQ RQE 区域]`，`resp.rq_offset` 指定 RQ 起始位置
 - **QP 创建后仍处于 RESET 状态**，需要 `ibv_modify_qp` → INIT → RTR → RTS 后才能通信
 
 ---
@@ -721,7 +721,7 @@ static int init_user_qp(struct erdma_qp *qp, struct erdma_ucontext *uctx,
 
 | 概念 | 说明 |
 |------|------|
-| **QP 队列缓冲** | 用户态分配的 `[SQ WQE | RQ RQE]` 连续空间，硬件 DMA 直接读写 |
+| **QP 队列缓冲** | 用户态分配的 `[SQ WQE + RQ RQE]` 连续空间，硬件 DMA 直接读写 |
 | **Doorbell 记录** | 用户态分配，硬件 DMA 读取 SQ/RQ 的生产者索引 |
 | **Doorbell 寄存器** | MMIO 映射到用户态，写 SQ DB 触发硬件发送，写 RQ DB 触发硬件接收 |
 | **qp_num** | 全局唯一的 QP 编号，通信对端通过该编号定位 QP（RC/UC 连接） |

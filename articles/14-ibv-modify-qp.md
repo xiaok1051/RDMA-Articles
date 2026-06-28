@@ -964,9 +964,9 @@ static int modify_qp_cmd_to_rts(struct erdma_dev *dev, struct erdma_qp *qp)
 
 | 转换 | 必需掩码 | 关键参数 | 硬件动作 |
 |------|----------|----------|---------|
-| RESET → INIT | `STATE \| PORT \| ACCESS_FLAGS` | port, access_flags | CmdQ 初始化 QP 上下文 |
-| INIT → RTR | `STATE \| AV \| DEST_QPN \| RQ_PSN \| MAX_DEST_RD_ATOMIC` | dest_qpn, rq_psn, ah_attr (IP) | CmdQ 建立连接 |
-| RTR → RTS | `STATE \| SQ_PSN \| TIMEOUT \| RETRY_CNT \| RNR_RETRY \| MAX_QP_RD_ATOMIC` | sq_psn, retry_cnt, timeout | CmdQ 启用发送 |
+| RESET → INIT | `STATE | PORT | ACCESS_FLAGS` | port, access_flags | CmdQ 初始化 QP 上下文 |
+| INIT → RTR | `STATE | AV | DEST_QPN | RQ_PSN | MAX_DEST_RD_ATOMIC` | dest_qpn, rq_psn, ah_attr (IP) | CmdQ 建立连接 |
+| RTR → RTS | `STATE | SQ_PSN | TIMEOUT | RETRY_CNT | RNR_RETRY | MAX_QP_RD_ATOMIC` | sq_psn, retry_cnt, timeout | CmdQ 启用发送 |
 | Any → ERR | `STATE` | — | CmdQ 停用 QP + 错误 CQE |
 
 ---
