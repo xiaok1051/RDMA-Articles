@@ -56,7 +56,7 @@ HBM3 的物理结构值得一提——它不是普通的 DRAM 芯片，而是 8-
 
 ## 3. PCIe：从 GPU 视角看
 
-如果之前读过本系列的 [08-pcie-rdma-driver.md](08-pcie-rdma-driver.md)，你已经从 RDMA 网卡驱动开发者的视角理解了 PCIe。现在换个角度——从 GPU 的视角。
+先看 PCIe，但这一次从 GPU 的视角，而不是 CPU 或网卡的视角。
 
 ### 3.1 GPU 作为 PCIe Endpoint
 
