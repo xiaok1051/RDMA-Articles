@@ -454,7 +454,60 @@ $ nvidia-smi topo -m    # 矩阵（PIX/PHB/NODE/SYS）
 
 `cudaDeviceCanAccessPeer()` 合并两层拓扑信息，返回综合判断：有 NVLink → true，同一 PCIe Switch → true（如果 ACS 关闭），否则 false。
 
-### 6.7 CUDA 11 vs 12 的 P2P 行为差异
+### 6.7 全链路调用栈：从 CUDA API 到内核
+
+以最常用的 `cudaDeviceEnablePeerAccess()` + `cudaMemcpyPeer()` 为例，从用户态到内核的完整路径：
+
+```
+用户态
+═══════════════════════════════════════════
+cudaDeviceEnablePeerAccess(gpu1, 0)    [libcudart.so]
+  → cuCtxEnablePeerAccess()            [libcuda.so, Driver API]
+    → ioctl(/dev/nvidiaX,              [进入内核]
+            NV_ESC_RM_CONTROL, ...)
+
+cudaMemcpyPeer(dst, 0, src, 1, size)  [libcudart.so]
+  → cuMemcpyPeerAsync()               [libcuda.so, Driver API]
+    → ioctl(/dev/nvidiactl, ...)       [进入内核]
+
+内核态
+═══════════════════════════════════════════
+nvidia.ko: nvidia_ioctl()
+  → 根据 GPU ID 找到源/目标 GPU 设备结构
+  → 查询拓扑（NVML 子系统内部维护了 NVLink/PCIe 拓扑图）
+  → 按优先级选择路径：
+     1. NVLink: 配 NVLink Controller 寄存器，源 GPU 发远程 load/store
+     2. PCIe P2P: 配 DMA Engine，发 Memory Read/Write TLP 到目标 GPU BAR1
+     3. 回退: 分配 CPU staging buffer，GPU DMA → CPU 内存 → GPU DMA
+  → 如果是异步传输，排入 GPU 的 copy engine queue，返回 stream handle
+```
+
+**关键模块分工：**
+
+| 模块 | 职责 |
+|------|------|
+| `libcudart.so` | CUDA Runtime API，用户直接调用的 thin wrapper |
+| `libcuda.so` | CUDA Driver API，ioctl 的发起方，管理 /dev/nvidia\* 设备节点 |
+| `nvidia.ko` | 主驱动：GPU 初始化、内存管理、P2P 路径选择、DMA 引擎编程、NVLink 控制 |
+| `nvidia-uvm.ko` | Unified Memory 驱动：page fault 处理、数据迁移、与 UVM daemon 协作 |
+| `nvidia-p2p.ko` | 导出 GPU 物理页的 PCIe bus address，供 RDMA 驱动（如 mlx5）使用 |
+| NVML (`libnvidia-ml.so`) | 拓扑查询、设备属性导出、`nvidia-smi` 的后端 |
+
+**Page Fault 路径（Unified Memory）**——这是另一条独立的调用链：
+
+```
+GPU MMU → TLB miss → page table walk → fault
+  → 中断 → nvidia-uvm.ko 捕获
+    → uvm daemon（用户态进程）通过 eventfd 收到通知
+      → uvm daemon 决策：migrate / duplicate / map-remote
+        → ioctl(/dev/nvidia-uvm) → 触发迁移
+          → nvidia.ko 执行 DMA/NVLink 迁移
+            → 更新 GPU page table → 唤醒 faulting 线程
+```
+
+每一个 `cudaMemcpyPeer()` 调用最终都会变成一次 ioctl，内核根据拓扑信息决定数据走 PCIe 还是 NVLink。对程序员来说只看到 `cudaMemcpyPeer()`，但下面有完整的 driver stack 在路由。
+
+### 6.8 CUDA 11 vs 12 的 P2P 行为差异
 
 CUDA 12 对 P2P 做了一些重要改进：
 
