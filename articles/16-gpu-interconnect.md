@@ -177,7 +177,13 @@ NVLink 是 NVIDIA 私有的 GPU 互联协议，从物理层到协议层都独立
 
 ### 4.2 协议层关键特性
 
-**Load/Store Semantics**：GPU 0 上运行的 kernel 可以直接 `ld.global` 读 GPU 1 的显存地址。硬件自动通过 NVLink 发起远程 load 请求，目标 GPU 的 MMU 翻译地址后返回数据。整个过程对程序员透明——就是一次显存访问，只不过延迟从 ~300 cycles（本地 HBM）变成了 ~1-3 μs（远程 NVLink）。
+**Load/Store vs Send/Recv——两种根本不同的编程模型**：
+
+传统网络（包括 RDMA）采用的是 **send/recv 模型**——通信双方显式协调：发送方调 `send(buf, size, dest)`，接收方必须提前 posting `recv(buf, size, src)`。收发两端必须 tag 匹配、buffer 就位，数据到达时接收方才知道。
+
+NVLink 采用的是 **load/store 模型**——发起方单方面完成操作，不需要对方配合。GPU 0 上运行的 kernel 可以直接 `ld.global` 读 GPU 1 的显存地址，就像访问本地内存一样。硬件自动通过 NVLink 发起远程 load 请求，目标 GPU 的 MMU 翻译地址后返回数据。被读的那块 GPU 完全不知道这件事，不需要跑任何程序。
+
+关键区别：load/store 是被动访问——被访方不需要主动参与，地址翻译全由硬件 MMU + ATS 完成。send/recv 是主动通信——接收方必须 post receive 才会接受数据。这就是为什么 NVLink 上的 P2P 延迟能做到 ~1-3 μs，而 RDMA 网络通常需要 ~5-10 μs：不光带宽不同，**编程模型本身的开销也不在一个量级**。
 
 **地址翻译**：GPU 内部 MMU 支持远程地址翻译。GPU 0 的 Page Table Entry 可以指向 GPU 1 的物理页，硬件通过 ATS（Address Translation Services）协议向 GPU 1 查询页表项。
 
